@@ -4,7 +4,13 @@ A diffusion-based video prediction model for autonomous driving, trained on Benc
 
 ## Quick Start
 
-### 1. Data Preprocessing
+### 1. Download Chencpoints
+Download the VAE from HuggingFace, and modify the path in config.yaml
+```bash
+huggingface-cli download --resume-download stabilityai/sd-vae-ft-mse --local-dir /path
+```
+
+### 2. Data Preprocessing
 
 Process raw Bench2Drive data to create training annotations:
 
@@ -24,7 +30,7 @@ python prepare_video_data.py \
     --verify
 ```
 
-### 2. Training
+### 3. Training
 
 **Single GPU:**
 ```bash
@@ -44,7 +50,7 @@ torchrun --nproc_per_node=2 train_video_pred.py \
     --resume checkpoints/video_prediction/step_50000.pt
 ```
 
-### 3. Evaluation
+### 4. Evaluation
 
 ```bash
 python eval_video_pred.py \
