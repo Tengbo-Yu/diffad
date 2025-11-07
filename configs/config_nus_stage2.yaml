@@ -1,0 +1,199 @@
+Global:
+  save_path: 'todo'
+  tb_path: 'todo'
+  load_from: ''
+  diffusion_type: 'fm'
+  global_seed: 2024
+  data_root: &data_root data/nuscenes/
+  # [x_min, y_min, z_min, x_max, y_max, z_max]  y--->front, x---->left
+  point_cloud_range: &point_cloud_range [ -32., -32., -5, 32., 32., 3 ]
+  bev_reso: &bev_range [ 0.125, 0.125 ]
+  grid_reso: &grid_reso [ 0.5, 0.5, 1 ] # bev feat
+  class_names: &class_names
+    - car
+    - truck
+    - construction_vehicle
+    - bus
+    - trailer
+    - barrier
+    - motorcycle
+    - bicycle
+    - pedestrian
+    - traffic_cone
+  input_modality: &input_modality
+    use_lidar: False
+    use_camera: True
+    use_radar: False
+    use_map: False
+    use_external: True
+
+  queue_length: &queue_length 4
+  eval_queue_length: &eval_queue_length 4
+  # prediction
+  predict_steps: &predict_steps 12
+  fut_steps: &fut_steps 4
+  past_steps: &past_steps 1
+  # planning
+  planning_steps: &planning_steps 6
+  input_size:
+    cam_front: [ 928, 1600 ] # h,w
+    cam_front_right: [ 928, 1600 ]
+    cam_front_left: [ 928, 1600 ]
+    cam_back: [ 928, 1600 ]
+    cam_back_left: [ 928, 1600 ]
+    cam_back_right: [ 928, 1600 ]
+
+Train:
+  max_epoch: 100
+  image_per_gpu: 1
+  worker_per_gpu: 8
+  log_every_step: 1000
+  save_every_step: 10000
+  optimizer: { type: AdamW, lr: 1.0e-05, weight_decay: 1.0e-02 }
+
+Backbone:
+  group0:
+    type: RegNetX
+    sub_type: 800MF
+    freeze: true
+    load: true
+    input_cameras: [ cam_front, cam_front_right, cam_front_left, cam_back, cam_back_left, cam_back_right ]
+
+Neck:
+  group0:
+    type: BiFPN
+    freeze: true
+    load: true
+    output_channel: 256
+    output_levels_index: [ 0 ] # p3
+
+ViewTransformation:
+  type: BevFormer
+  freeze: true
+  load: true
+  hidden_dim: 256
+  nhead: 8
+  num_decoder_layers: 1
+  dec_n_points: 1
+  dim_feedforward: 1024
+  dropout: 0.1
+  fpn_level: [ 0 ]
+  grid_resolution: [ 2, 2, 1 ]
+
+Temporal:
+  type: ConvLSTM
+  freeze: false
+  load: true
+  in_c: 256
+  hidden_c: 256
+  kernel: 3
+  stride: 1
+  pc_range: *point_cloud_range
+  grid_reso: *grid_reso
+
+ActionProp:
+  dropout: 0.5
+  freeze: false
+  load: true
+
+PostProcessNet:
+  nhead: 8
+  dim_feedforward: 1024
+  dropout: 0.1
+  activation: relu
+  num_decoder_layers: 6
+  num_fc: 2
+  traj_size: [ *planning_steps, 2 ]
+  freeze: false
+  load: true
+
+LDM:
+  model_type: 'DiT-L/2'
+  use_gradient_checkpointing: true
+  freeze: false
+  load: true
+
+VAE:
+  model_path: 'todo'
+  latent_channels: 4
+  downsample_ratio: 8
+
+
+train_pipeline: &train_pipeline
+  - type: LoadMultiViewImageFromFiles
+    to_float32: True
+  - type: PhotoMetricDistortionMultiViewImage
+  - type: LoadAnnotations3D
+    with_bbox_3d: True
+    with_label_3d: True
+    with_attr_label: False
+  - type: ObjectRangeFilterTrack
+    point_cloud_range: *point_cloud_range
+  - type: ObjectNameFilterTrack
+    classes: *class_names
+  - type: NormalizeMultiviewImage
+    mean: [ 103.530, 116.280, 123.675 ]
+    std: [ 1.0, 1.0, 1.0 ]
+    to_rgb: False
+  - type: PadMultiViewImage
+    size_divisor: 32
+  - type: DefaultFormatBundle3D
+    class_names: *class_names
+  - type: CustomCollect3D
+    keys: [
+      "gt_bboxes_3d",
+      "gt_labels_3d",
+      "map_gt_instance",
+      "map_gt_labels",
+      "img",
+      "timestamp",
+      "ego2lidar",
+      "ego2global",
+      "gt_fut_traj",
+      "gt_fut_traj_mask",
+      "gt_sdc_fut_traj",
+      "gt_sdc_fut_traj_mask",
+      "sdc_planning",
+      "sdc_planning_mask",
+      "command",
+      "ego_status" ]
+
+Dataset:
+  train:
+    type: NuScenesE2EDataset
+    data_root: *data_root
+    ann_file: data/nuscenes/nuscenes_infos_temporal_train.pkl
+    pipeline: *train_pipeline
+    classes: *class_names
+    modality: *input_modality
+    test_mode: False
+    is_debug: false
+    use_valid_flag: True
+    point_cloud_range: *point_cloud_range
+    bev_reso: *bev_range
+    queue_length: *queue_length
+    predict_steps: *predict_steps
+    past_steps: *past_steps
+    fut_steps: *fut_steps
+    planning_steps: *planning_steps
+    use_nonlinear_optimizer: True
+    box_type_3d: LiDAR
+  eval:
+    type: NuScenesE2EDataset
+    data_root: *data_root
+    ann_file: data/nuscenes/nuscenes_infos_temporal_val.pkl
+    pipeline: *train_pipeline
+    classes: *class_names
+    modality: *input_modality
+    test_mode: False
+    is_debug: false
+    use_valid_flag: True
+    point_cloud_range: *point_cloud_range
+    bev_reso: *bev_range
+    queue_length: *eval_queue_length
+    predict_steps: *predict_steps
+    past_steps: *past_steps
+    fut_steps: *fut_steps
+    planning_steps: *planning_steps
+    use_nonlinear_optimizer: True
+    box_type_3d: LiDAR

@@ -1,0 +1,62 @@
+Global:
+  save_path: 'checkpoints/video_prediction'
+  log_dir: 'logs/video_prediction'
+  tb_path: 'logs/video_prediction'
+  load_from: ''  # Path to checkpoint for resuming training
+  global_seed: 2024
+  
+  # Wandb configuration
+  use_wandb: true  # Enable wandb logging
+  wandb_project: 'diffad-video-prediction'  # Wandb project name
+  wandb_run_name: null  # Auto-generate run name if null
+  
+Train:
+  max_epoch: 100
+  batch_size: 2  # Batch size per GPU
+  num_workers: 8  # DataLoader workers per GPU
+  lr: 1.0e-4
+  weight_decay: 1.0e-2
+  gradient_clip_val: 1.0
+  log_every_step: 100  # Log every N steps
+  save_every_step: 5000  # Save checkpoint every N steps
+  visualize_every_step: 1000  # Visualize predictions every N steps
+  eval_every_epoch: 5  # Evaluate every N epochs
+  num_inference_steps: 20  # Number of denoising steps during evaluation
+  resume_training: false  # Whether to resume optimizer state when loading checkpoint
+
+Model:
+  # VAE configuration
+  vae_model_path: '/media/raid/workspace/tengbo/vae'  # Pretrained VAE from HuggingFace
+  latent_channels: 4
+  
+  # Temporal configuration
+  past_frames: 4  # Number of historical frames to use as input
+  future_frames: 4  # Number of future frames to predict
+  
+  # Image size (H, W)
+  img_size: [256, 448]  # Resized from original 928x1600
+  
+  # DiT (Diffusion Transformer) configuration
+  dit_config:
+    hidden_size: 1152  # Hidden dimension
+    depth: 28  # Number of transformer layers
+    num_heads: 16  # Number of attention heads
+    mlp_ratio: 4.0  # MLP expansion ratio
+
+Dataset:
+  train:
+    data_root: 'b2d_data/Bench2Drive-AccidentTwoWays'
+    ann_file: 'b2d_data/infos/b2d_infos_train.pkl'
+    past_frames: 4
+    future_frames: 4
+    sample_interval: 5  # Frame sampling interval (0.5 seconds at 10Hz)
+    img_size: [256, 448]
+  
+  eval:
+    data_root: 'b2d_data/Bench2Drive-AccidentTwoWays'
+    ann_file: 'b2d_data/infos/b2d_infos_val.pkl'
+    past_frames: 4
+    future_frames: 4
+    sample_interval: 5
+    img_size: [256, 448]
+
