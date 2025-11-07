@@ -132,23 +132,58 @@ def create_minimal_annotations(rgb_front_path, scene_name):
     return annotations
 
 
-def split_train_val(infos, val_ratio=0.2, seed=42):
+def split_train_val(infos, val_ratio=0.2, overfit=False, seed=42):
     """
-    Split data into train and validation sets by total number of samples
+    Split data into train and validation sets
+    
+    Args:
+        infos: List of annotation dictionaries
+        val_ratio: Ratio of validation data
+        overfit: If True, use the same data for train and val (for overfitting tests)
+        seed: Random seed (only used if shuffling is needed)
     """
     np.random.seed(seed)
     
-    # Shuffle all infos
-    infos_shuffled = infos.copy()
-    np.random.shuffle(infos_shuffled)
+    # Group by scene/clip
+    scenes = {}
+    for info in infos:
+        scene_token = info.get('scene_token', info.get('clip_id', 'unknown'))
+        if scene_token not in scenes:
+            scenes[scene_token] = []
+        scenes[scene_token].append(info)
     
-    # Split by ratio
-    split_idx = int(len(infos_shuffled) * (1 - val_ratio))
-    train_infos = infos_shuffled[:split_idx]
-    val_infos = infos_shuffled[split_idx:]
+    # Sort frames within each scene by timestamp/frame_id for temporal consistency
+    for scene_token in scenes:
+        scenes[scene_token] = sorted(
+            scenes[scene_token], 
+            key=lambda x: (x.get('timestamp', 0), x.get('frame_id', 0))
+        )
     
-    print(f"Train samples: {len(train_infos)}")
-    print(f"Val samples: {len(val_infos)}")
+    scene_list = sorted(scenes.keys())  # Sort scene names for deterministic split
+    
+    if overfit:
+        # Use all scenes for both train and val
+        print("OVERFIT MODE: Using same data for train and validation")
+        train_scenes = scene_list
+        val_scenes = scene_list
+    else:
+        # Split scenes by ratio (deterministic, no shuffle)
+        split_idx = int(len(scene_list) * (1 - val_ratio))
+        train_scenes = scene_list[:split_idx]
+        val_scenes = scene_list[split_idx:]
+    
+    # Collect infos
+    train_infos = []
+    val_infos = []
+    
+    for scene in train_scenes:
+        train_infos.extend(scenes[scene])
+    
+    for scene in val_scenes:
+        val_infos.extend(scenes[scene])
+    
+    print(f"Train scenes: {len(train_scenes)}, frames: {len(train_infos)}")
+    print(f"Val scenes: {len(val_scenes)}, frames: {len(val_infos)}")
     
     return train_infos, val_infos
 
@@ -203,7 +238,9 @@ def main():
     parser.add_argument('--output_dir', type=str, default='data/infos',
                        help='Output directory for processed annotations')
     parser.add_argument('--val_ratio', type=float, default=0.2,
-                       help='Validation set ratio')
+                       help='Validation set ratio (ignored if --overfit is set)')
+    parser.add_argument('--overfit', action='store_true',
+                       help='Use same data for train and val (for overfitting tests)')
     parser.add_argument('--verify', action='store_true',
                        help='Verify that all files exist')
     
@@ -227,7 +264,11 @@ def main():
             print("Warning: Some files are missing. Training may fail.")
     
     # Split train/val
-    train_infos, val_infos = split_train_val(all_infos, val_ratio=args.val_ratio)
+    train_infos, val_infos = split_train_val(
+        all_infos, 
+        val_ratio=args.val_ratio,
+        overfit=args.overfit
+    )
     
     # Save
     train_output = os.path.join(args.output_dir, 'b2d_infos_train.pkl')

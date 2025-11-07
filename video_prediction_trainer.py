@@ -182,11 +182,17 @@ class VideoPredictionTrainer:
         for p in model.parameters():
             p.requires_grad = flag
     
+    def _get_model(self):
+        """Get the underlying model (unwrap DDP if necessary)"""
+        if hasattr(self.ddp_model, 'module'):
+            return self.ddp_model.module
+        return self.ddp_model
+    
     @torch.no_grad()
     def update_ema(self, decay=0.9999):
         """Update EMA model"""
         ema_params = OrderedDict(self.ema.named_parameters())
-        model_params = OrderedDict(self.ddp_model.module.named_parameters())
+        model_params = OrderedDict(self._get_model().named_parameters())
         
         for name, param in model_params.items():
             if name in ema_params:
@@ -196,7 +202,7 @@ class VideoPredictionTrainer:
         """Save checkpoint"""
         if self.rank == 0:
             checkpoint = {
-                'model': self.ddp_model.module.state_dict(),
+                'model': self._get_model().state_dict(),
                 'ema': self.ema.state_dict(),
                 'optimizer': self.optimizer.state_dict(),
                 'step': self.step,
@@ -311,7 +317,7 @@ class VideoPredictionTrainer:
         self.update_ema(decay=0)
         
         # Verify EMA initialization
-        model_param_norm = sum(p.norm().item() for p in self.ddp_model.module.parameters() if p.requires_grad)
+        model_param_norm = sum(p.norm().item() for p in self._get_model().parameters() if p.requires_grad)
         ema_param_norm = sum(p.norm().item() for p in self.ema.parameters())
         self.logger.info(f"Model param norm: {model_param_norm:.4f}, EMA param norm: {ema_param_norm:.4f}")
         
@@ -321,8 +327,9 @@ class VideoPredictionTrainer:
             self.epoch = epoch
             self.logger.info(f"Epoch {self.epoch + 1}/{self.total_epoch}")
             
-            # Set epoch for sampler
-            self.train_loader.sampler.set_epoch(self.epoch)
+            # Set epoch for sampler (only for DistributedSampler)
+            if hasattr(self.train_loader.sampler, 'set_epoch'):
+                self.train_loader.sampler.set_epoch(self.epoch)
             
             # Train
             self.ddp_model.train()

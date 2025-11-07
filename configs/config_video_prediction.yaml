@@ -11,8 +11,8 @@ Global:
   wandb_run_name: null  # Auto-generate run name if null
   
 Train:
-  max_epoch: 100
-  batch_size: 2  # Batch size per GPU
+  max_epoch: 200
+  batch_size: 1  # Batch size per GPU
   num_workers: 8  # DataLoader workers per GPU
   lr: 1.0e-4
   weight_decay: 1.0e-2
